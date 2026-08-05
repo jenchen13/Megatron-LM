@@ -1625,6 +1625,10 @@ def validate_args(args, defaults={}):
                 '--freeze-all-layers incompatible with overlap_param_gather. Disabling overlap_param_gather.'
             )
             args.overlap_param_gather = False
+    if args.freeze_attention_layers and args.freeze_all_layers:
+        warn_rank_0(
+            '--freeze-attention-layers is redundant with --freeze-all-layers; all layers are already frozen.'
+        )
 
     if args.override_ckpt_iteration is not None:
         assert not args.finetune, "Cannot override checkpoint iteration together with finetune flag."
@@ -2699,6 +2703,11 @@ def _add_learning_rate_args(parser):
                        'clip values below this threshold')
     group.add_argument('--freeze-all-layers', action='store_true',
                        help='Freeze all layers of the model.')
+    group.add_argument('--freeze-attention-layers', action='store_true',
+                       help='Freeze decoder attention layers in hybrid models while leaving other layers trainable.')
+    group.add_argument('--freeze-mamba-long-range', action='store_true',
+                       help='Freeze Mamba SSM state-decay params (A_log, dt_bias) that control long-range memory, '
+                            'leaving the quantized in_proj/out_proj trainable so QAD still heals their quantization.')
 
     return parser
 

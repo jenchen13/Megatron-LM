@@ -1769,6 +1769,41 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
                 if hasattr(module, "frozen_expert_bias"):
                     module.frozen_expert_bias = True
 
+    if args.freeze_attention_layers:
+        frozen_layer_indices = []
+        frozen_param_count = 0
+        for model_module in model:
+            for module_name, module in model_module.named_modules():
+                if not (hasattr(module, "layer_type_list") and hasattr(module, "layers")):
+                    continue
+                if "mtp" in module_name:
+                    continue
+                for layer_idx, layer_type in enumerate(module.layer_type_list):
+                    if layer_type != "*":
+                        continue
+                    layer = module.layers[layer_idx]
+                    frozen_param_count += sum(param.numel() for param in layer.parameters() if param.requires_grad)
+                    layer.requires_grad_(False)
+                    frozen_layer_indices.append(layer_idx)
+        print_rank_0(
+            "Frozen decoder attention layers via --freeze-attention-layers: "
+            f"local_layer_indices={frozen_layer_indices}, params={frozen_param_count}"
+        )
+
+    if args.freeze_mamba_long_range:
+        frozen_mamba_params = []
+        for model_module in model:
+            for param_name, param in model_module.named_parameters():
+                if "mtp" in param_name:
+                    continue
+                if param_name.endswith(".mixer.A_log") or param_name.endswith(".mixer.dt_bias"):
+                    param.requires_grad_(False)
+                    frozen_mamba_params.append(param_name)
+        print_rank_0(
+            "Frozen Mamba long-range (SSM state-decay) params via --freeze-mamba-long-range: "
+            f"count={len(frozen_mamba_params)}"
+        )
+
     # Set tensor model parallel attributes if not set.
     # Only parameters that are already tensor model parallel have these
     # attributes set for them. We should make sure the default attributes
